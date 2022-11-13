@@ -1,19 +1,13 @@
 ---
-title: "p8105_hw3_yf2605"
+title: "p8105_hw5_yf2605"
 author: "Yi_Fang"
 output: github_document
 ---
-# Setting
 
-libraries
-
-```{r}
+```{r setup, include=FALSE}
 library(tidyverse)
-```
+library(viridis)
 
-Picture display
-
-```{r}
 knitr::opts_chunk$set(
 	echo = TRUE,
 	warning = FALSE,
@@ -21,42 +15,196 @@ knitr::opts_chunk$set(
   fig.height = 6,
   out.width = "90%"
 )
-```
-
-Plot theme 
-
-```{r}
-theme_set(theme_minimal() + theme(legend.position = "bottom"))
 
 options(
   ggplot2.continuous.colour = "viridis",
   ggplot2.continuous.fill = "viridis"
 )
-
 scale_colour_discrete = scale_colour_viridis_d
 scale_fill_discrete = scale_fill_viridis_d
+theme_set(
+  theme_minimal() + 
+    theme(
+      legend.position = "bottom",
+      plot.title = element_text(hjust = 0.5)
+    )  
+)
 ```
 
 # Problem 1
-This zip file contains data from a longitudinal study that included a control arm and an experimental arm. Data for each participant is included in a separate file, and file names include the subject ID and arm.
 
 Create a tidy dataframe containing data from all participants, including the subject ID, arm, and observations over time:
 
-Start with a dataframe containing all file names; the list.files function will help
-Iterate over file names and read in data for each subject using purrr::map and saving the result as a new variable in the dataframe
-Tidy the result; manipulate file names to include control arm and subject ID, make sure weekly observations are “tidy”, and do any other tidying that’s necessary
+- create file path list and read data
+- unnest the data
+- separate file name into arm and id
+- tidy the dataset, make the dataset longer with 1 column for week and 1 column for observation result 
+- convert week into a factor variable with 8 levels
+- select required columns: arm, id, week, result
+
+```{r}
+p1_df = 
+  tibble(file_name = list.files(path="data/P1_data")) %>% 
+  mutate(
+    path = str_c("data/P1_data/", file_name),
+    data = map(path, read_csv)
+    ) %>% 
+  unnest(data) %>% 
+  separate(
+    col = file_name, 
+    into = c("arm","id","suffix"), 
+    sep = "\\_|\\.", 
+    remove = TRUE
+    ) %>% 
+  pivot_longer(
+    cols = week_1:week_8,
+    names_to = "week",
+    names_prefix = "week_",
+    values_to = "result"
+  ) %>% 
+  mutate(week = as.factor(week)) %>% 
+  select(arm, id, week, result)
+```
+
 Make a spaghetti plot showing observations on each subject over time, and comment on differences between groups.
 
+```{r}
+p1_df %>%
+  mutate(
+    arm = ifelse(arm == "con", "Control", "Experimental")
+  ) %>% 
+  ggplot(
+    aes(
+      x = week, 
+      y = result, 
+      group = id)
+    ) +
+  geom_point()+
+  geom_line()+
+  facet_grid(. ~ arm)+
+  labs(
+    title = "Spaghetti plot for observation results on each subject over time by arm",
+    x = "Week",
+    y = "Result"
+  )
+  
+```
+
+- For the experimental group, the observation results seemed to increase over time.
+- For the control group, there seemed to be no trend in the observation results over time.
+
 # Problem 2
-The Washington Post has gathered data on homicides in 50 large U.S. cities and made the data available through a GitHub repository here. You can read their accompanying article here.
 
-Describe the raw data. Create a city_state variable (e.g. “Baltimore, MD”) and then summarize within cities to obtain the total number of homicides and the number of unsolved homicides (those for which the disposition is “Closed without arrest” or “Open/No arrest”).
+```{r}
+homicide = read_csv("data/homicide-data.csv")
+```
 
-For the city of Baltimore, MD, use the prop.test function to estimate the proportion of homicides that are unsolved; save the output of prop.test as an R object, apply the broom::tidy to this object and pull the estimated proportion and confidence intervals from the resulting tidy dataframe.
+Description:
+The raw data set contains `r ncol(homicide)` variables and `r nrow(homicide)` records.
 
-Now run prop.test for each of the cities in your dataset, and extract both the proportion of unsolved homicides and the confidence interval for each. Do this within a “tidy” pipeline, making use of purrr::map, purrr::map2, list columns and unnest as necessary to create a tidy dataframe with estimated proportions and CIs for each city.
+* `r colnames(homicide)`
 
-Create a plot that shows the estimates and CIs for each city – check out geom_errorbar for a way to add error bars based on the upper and lower limits. Organize cities according to the proportion of unsolved homicides.
+
+Create a city_state variable (e.g. “Baltimore, MD”)
+
+```{r}
+homicide = 
+  homicide %>% 
+  mutate(
+    city_state = str_c(city, ", ", state)
+  ) 
+```
+
+summarize within cities to obtain the total number of homicides and the number of unsolved homicides (those for which the disposition is “Closed without arrest” or “Open/No arrest”).
+
+```{r}
+city_sum = 
+  homicide %>% 
+  group_by(city_state) %>% 
+  summarize(
+    n_homicide = n(),
+    n_unsolved = sum(disposition == "Closed without arrest" | 
+                     disposition == "Open/No arrest")
+  ) 
+  
+city_sum %>% knitr::kable()
+```
+
+
+For the city of Baltimore, MD, use the prop.test function to estimate the proportion of homicides that are unsolved; 
+
+save the output of prop.test as an R object, apply the broom::tidy to this object and pull the estimated proportion and confidence intervals from the resulting tidy dataframe.
+
+```{r}
+baltimore_sum = 
+  city_sum %>% 
+  filter(city_state == "Baltimore, MD")
+
+baltimore_result = 
+  prop.test(
+  x = baltimore_sum[['n_unsolved']], 
+  n = baltimore_sum[['n_homicide']]
+  ) %>% 
+  broom::tidy() %>% 
+  select(estimate, conf.low, conf.high)
+
+baltimore_result %>% knitr::kable(digits = 2)
+```
+
+Run prop.test for each of the cities in your dataset, and extract both the proportion of unsolved homicides and the confidence interval for each. 
+
+Do this within a “tidy” pipeline, making use of purrr::map, purrr::map2, list columns and unnest as necessary to create a tidy dataframe with estimated proportions and CIs for each city.
+```{r}
+tidy_test_result = function(x, n){
+  result_df = 
+    prop.test(
+      x = x, 
+      n = n
+    )%>% 
+    broom::tidy() %>% 
+    select(estimate, conf.low, conf.high)
+
+  result_df
+}
+
+city_result = 
+  city_sum %>% 
+  mutate(
+    result_df = purrr::map2(
+      .x = n_unsolved, 
+      .y = n_homicide, 
+      ~tidy_test_result(x = .x, n = .y)
+    )
+  ) %>% 
+  unnest(result_df)
+
+city_result %>% knitr::kable(digits = 2)
+```
+
+Create a plot that shows the estimates and CIs for each city – check out geom_errorbar for a way to add error bars based on the upper and lower limits. 
+
+Organize cities according to the proportion of unsolved homicides.
+
+```{r}
+city_result %>% 
+  mutate(
+    city_state = fct_reorder(city_state, estimate)
+  ) %>% 
+  ggplot(aes(
+    x = city_state,
+    y = estimate
+  ))+
+  geom_point() +
+  geom_errorbar(aes(ymin = conf.low, 
+                    ymax = conf.high
+                    ))+
+  labs(
+    title = "Estimate and 95%CI for unsolved homicide in each city",
+    x = "City, State",
+    y = "Estimate"
+  )+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
 
 # Problem 3
 When designing an experiment or analysis, a common question is whether it is likely that a true effect will be detected – put differently, whether a false null hypothesis will be rejected. The probability that a false null hypothesis is rejected is referred to as power, and it depends on several factors, including: the sample size; the effect size; and the error variance. In this problem, you will conduct a simulation to explore power in a one-sample t-test.
