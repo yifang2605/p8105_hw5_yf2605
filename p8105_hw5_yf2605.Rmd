@@ -80,7 +80,7 @@ p1_df %>%
       group = id)
     ) +
   geom_point()+
-  geom_line()+
+  geom_path()+
   facet_grid(. ~ arm)+
   labs(
     title = "Spaghetti plot for observation results on each subject over time by arm",
